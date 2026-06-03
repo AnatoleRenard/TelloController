@@ -2,9 +2,8 @@ import Tello, time
 
 tello = Tello.Tello()
 
-tello.takeoff()
-time.sleep(2)
-
-tello.land()
+tello.getBattery()
+tello.getWifiQuality()
+tello.getSDKVersion()
 
 tello.close()
