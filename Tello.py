@@ -1,6 +1,7 @@
-import socket
+import socket, av, time
 import numpy as np
-from threading import Thread, Lock
+from numpy.typing import NDArray
+from threading import Thread, Lock, Event
 
 class Tello:
     #coms
@@ -24,15 +25,37 @@ class Tello:
     FPS_15 = "middle"
     FPS_30 = "high"
 
+    #time
+    TIMEOUT = 0.05
+
     def __init__(self):
+        #event
+        self.endEvent = Event()
+
+        #settings
+        self.streamOn = False
+
+        #time since last command
+        self.lastCommandTime = time.time()
+
+        #socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(10)
         self.sock.bind(("", self.LOCAL_PORT))
+
+        #image
+        self.frame: NDArray[np.uint8]
+        self.frame = None
+        self.imageLock = Lock()
+        Thread(target=self.streamThread).start()
 
         #set drone into sdk mode
         self.sendCommandReturn("command")
 
     def close(self):
+        if self.streamOn:
+            self.streamoff()
+        self.endEvent.set()
         self.sock.close()
     
     def sendCommandNoReturn(self, command: str):
@@ -41,8 +64,15 @@ class Tello:
         self.sock.sendto(command.encode('utf-8'), (self.TELLO_IP, self.COMMAND_PORT))
 
     def sendCommandReturn(self, command: str) -> str:
+        #make sure not too many commands sent at once
+        while time.time() - self.lastCommandTime < self.TIMEOUT:
+            time.sleep(0.01)
+        
         #send command
         self.sendCommandNoReturn(command)
+        
+        #update time
+        self.lastCommandTime = time.time()
 
         #recv return
         data = "-1"
@@ -64,9 +94,12 @@ class Tello:
         return self.sendCommandReturn("land")
     
     def streamon(self) -> str:
-        return self.sendCommandReturn("streamon")
+        resp = self.sendCommandReturn("streamon")
+        self.streamOn = True
+        return resp
     
     def streamoff(self) -> str:
+        self.streamOn = False
         return self.sendCommandReturn("streamoff")
     
     def emergency(self) -> str:
@@ -235,4 +268,33 @@ class Tello:
 
     #get wifi version
     def getWifiVersion(self) -> str:
-        return self.sendCommandReturn("wifiversion?") 
+        return self.sendCommandReturn("wifiversion?")
+
+    """Stream for Video"""
+    #get stream if video on
+    def streamThread(self):
+        while not self.endEvent.is_set():
+            if self.streamOn:
+                container = av.open("udp://0.0.0.0:11111", timeout=5)
+
+                try:
+                    for frame in container.decode(video=0):
+                        if not self.streamOn:
+                            break
+
+                        img = frame.to_ndarray(format="rgb24")
+
+                        with self.imageLock:
+                            self.frame = np.transpose(img, (1, 0, 2))
+
+                except Exception as e:
+                    print("Stream error:", e)
+                
+                container.close()
+            time.sleep(1)
+    
+    def getFrame(self) -> NDArray[np.uint8]:
+        if self.streamOn:
+            with self.imageLock:
+                return self.frame
+        return None
