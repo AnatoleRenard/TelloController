@@ -20,6 +20,10 @@ class Tello:
     MIN_RC   = -100
     MAX_RC   = 100
 
+    #speeds
+    FAST_SPD = 100
+    SLOW_SPD = 50
+
     #fps
     FPS_5  = "low"
     FPS_15 = "middle"
@@ -38,6 +42,9 @@ class Tello:
 
         #settings
         self.streamOn = False
+        self.flying = False
+        self.motorOn = False
+        self.fastMode = False
 
         #time since last command
         self.lastCommandTime = time.time()
@@ -65,14 +72,17 @@ class Tello:
         self.sendCommandReturn("command")
 
     def close(self):
+        if self.motorOn:
+            self.motoroff()
+        
         if self.streamOn:
             self.streamoff()
+        
         self.endEvent.set()
         self.sock.close()
     
     def sendCommandNoReturn(self, command: str):
         #send command
-        print(f"Sending Command: {command}")
         self.sock.sendto(command.encode('utf-8'), (self.TELLO_IP, self.COMMAND_PORT))
 
     def sendCommandReturn(self, command: str) -> str:
@@ -81,6 +91,7 @@ class Tello:
             time.sleep(0.01)
         
         #send command
+        print(f"Sending Command: {command}")
         self.sendCommandNoReturn(command)
         
         #update time
@@ -100,9 +111,11 @@ class Tello:
     """Control Commands"""
     #note: return comes in once operation is done
     def takeoff(self) -> str:
+        self.flying = True
         return self.sendCommandReturn("takeoff")
     
     def land(self) -> str:
+        self.flying = False
         return self.sendCommandReturn("land")
     
     def streamon(self) -> str:
@@ -115,7 +128,8 @@ class Tello:
         return self.sendCommandReturn("streamoff")
     
     def emergency(self) -> str:
-        return self.sendCommandReturn("emergency")
+        print("Sending Command: emergency")
+        return self.sendCommandNoReturn("emergency")
     
     #move commands, move in cm, 0-500 cm
     def up(self, x: int) -> str:
@@ -153,9 +167,11 @@ class Tello:
     
     #turn motor on and off for cooling while on ground
     def motoron(self) -> str:
+        self.motorOn = True
         return self.sendCommandReturn("motoron")
     
     def motoroff(self) -> str:
+        self.motorOn = False
         return self.sendCommandReturn("motoroff")
     
     #throw to takeoff, launches within 5 seconds
@@ -200,7 +216,10 @@ class Tello:
 
     #reboot drone (no response = success)
     def reboot(self) -> str:
-        return self.sendCommandReturn("reboot")
+        self.sendCommandReturn("streamoff")
+        self.sendCommandReturn("motoroff")
+        print("Sending Command: reboot")
+        return self.sendCommandNoReturn("reboot")
 
     """Set Commands"""
     #set speed to x cm/s (10 - 100)
@@ -300,7 +319,7 @@ class Tello:
                             self.frame = np.transpose(img, (1, 0, 2))
 
                 except Exception as e:
-                    print("Stream error:", e)
+                    print("Stream error: ", e)
                 
                 container.close()
             time.sleep(1)
@@ -316,11 +335,16 @@ class Tello:
     #get drone states
     def stateThread(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(2)
         sock.bind(("", self.STATE_PORT))
 
         while not self.endEvent.is_set():
-            data, address = sock.recvfrom(1024)
-            data = data.decode('utf-8')
+            data = "-1"
+            try:
+                data, address = sock.recvfrom(1024)
+                data = data.decode('utf-8')
+            except socket.timeout:
+                print("No State data for a Second!")
 
             with self.stateLock:
                 for item in data.split(";"):
@@ -331,7 +355,8 @@ class Tello:
 
                     key = split[0]
                     value = split[1]
-                    self.state[key] = value
+                    self.state[key] = value        
+        sock.close()
     
     #get angles
     def getPitch(self) -> int:
@@ -405,3 +430,8 @@ class Tello:
     def getAccelZ(self) -> int:
         with self.stateLock:
             return float(self.state["agz"])
+
+    """None UDP commands"""
+    #take bool to set mode
+    def setFastMode(self, mode):
+        self.fastMode = mode
