@@ -25,6 +25,10 @@ class Tello:
     FPS_15 = "middle"
     FPS_30 = "high"
 
+    #res
+    HIGH = "high"
+    LOW = "low"
+
     #time
     TIMEOUT = 0.05
 
@@ -48,6 +52,14 @@ class Tello:
         self.frame = None
         self.imageLock = Lock()
         Thread(target=self.streamThread).start()
+
+        #drone state
+        self.state: dict[str, str] = {"mid": "-2", "x": "-200", "y": "-200", "z": "-200", "mpry": "0",
+                                 "pitch": "0", "roll": "0", "yaw": "0", "vgx": "0", "vgy": "0", "vgz": "0",
+                                 "templ": "0", "tmph": "0", "tof": "0", "h": "0", "bat": "0", "baro": "0",
+                                 "time": "0", "agx": "0", "agy": "0", "agz": "0"}
+        self.stateLock = Lock()
+        Thread(target=self.stateThread).start()
 
         #set drone into sdk mode
         self.sendCommandReturn("command")
@@ -298,3 +310,98 @@ class Tello:
             with self.imageLock:
                 return self.frame
         return None
+    
+
+    """Stream for State"""
+    #get drone states
+    def stateThread(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("", self.STATE_PORT))
+
+        while not self.endEvent.is_set():
+            data, address = sock.recvfrom(1024)
+            data = data.decode('utf-8')
+
+            with self.stateLock:
+                for item in data.split(";"):
+                    split = item.split(":")
+
+                    if len(split) < 2:
+                        continue
+
+                    key = split[0]
+                    value = split[1]
+                    self.state[key] = value
+    
+    #get angles
+    def getPitch(self) -> int:
+        with self.stateLock:
+            return int(self.state["pitch"])
+    
+    def getRoll(self) -> int:
+        with self.stateLock:
+            return int(self.state["roll"])
+    
+    def getYaw(self) -> int:
+        with self.stateLock:
+            return int(self.state["yaw"])
+    
+    #get velocity in cm/s
+    def getVelocityX(self) -> int:
+        with self.stateLock:
+            return int(self.state["vgx"])
+    
+    def getVelocityY(self) -> int:
+        with self.stateLock:
+            return int(self.state["vgy"])
+    
+    def getVelocityZ(self) -> int:
+        with self.stateLock:
+            return int(self.state["vgz"])
+    
+    #get temp in degrees
+    def getTempL(self) -> int:
+        with self.stateLock:
+            return int(self.state["templ"])
+    
+    def getTempH(self) -> int:
+        with self.stateLock:
+            return int(self.state["temph"])
+    
+    #distance of flight in cm
+    def getTimeOfFlihgtDistance(self) -> int:
+        with self.stateLock:
+            return int(self.state["tof"])
+    
+    #height in cm (relative to takeoff point)
+    def getHeight(self) -> int:
+        with self.stateLock:
+            return int(self.state["h"])
+    
+    #get battery percentage
+    def getBatteryState(self) -> int:
+        with self.stateLock:
+            return int(self.state["bat"])
+
+    #height (barometer, m)
+    def getHeightBarometer(self) -> float:
+        with self.stateLock:
+            return float(self.state["baro"])
+    
+    #get motor on time (sec)
+    def getMotorOnTime(self) -> int:
+        with self.stateLock:
+            return int(self.state["time"])
+    
+    #get accel in cm/s2
+    def getAccelX(self) -> float:
+        with self.stateLock:
+            return float(self.state["agx"])
+    
+    def getAccelY(self) -> int:
+        with self.stateLock:
+            return float(self.state["agy"])
+    
+    def getAccelZ(self) -> int:
+        with self.stateLock:
+            return float(self.state["agz"])
