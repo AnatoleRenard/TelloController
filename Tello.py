@@ -202,7 +202,11 @@ class Tello:
     
     #set res to either 480p or 720p using "high" and "low"
     def setResolution(self, res: str) -> str:
-        return seld.sendCommandReturn(f"setresolution {res}")
+        return self.sendCommandReturn(f"setresolution {res}")
+    
+    #change camera to downvision 0 no 1 yes
+    def setDownvision(self, downvision: int) -> str:
+        return self.sendCommandReturn(f"downvision {downvision}")
 
     """Read Commands"""
     #get speed in cm/s
