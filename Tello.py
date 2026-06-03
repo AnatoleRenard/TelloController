@@ -1,7 +1,9 @@
 import socket, av, time
 import numpy as np
-from numpy.typing import NDArray
 from threading import Thread, Lock, Event
+from numpy.typing import NDArray
+from PIL import Image
+from datetime import datetime
 
 class Tello:
     #coms
@@ -45,6 +47,9 @@ class Tello:
         self.flying = False
         self.motorOn = False
         self.fastMode = False
+        self.recording = False
+        self.startRecording = False
+        self.endRecording = False
 
         #time since last command
         self.lastCommandTime = time.time()
@@ -58,6 +63,9 @@ class Tello:
         self.frame: NDArray[np.uint8]
         self.frame = None
         self.imageLock = Lock()
+        self.recordLock = Lock()
+        self.outputContainer = None
+        self.outputStream = None
         Thread(target=self.streamThread).start()
 
         #drone state
@@ -76,6 +84,8 @@ class Tello:
             self.motoroff()
         
         if self.streamOn:
+            if self.recording:
+                self.video()
             self.streamoff()
         
         self.endEvent.set()
@@ -125,6 +135,8 @@ class Tello:
     
     def streamoff(self) -> str:
         self.streamOn = False
+        if self.recording:
+            self.video()
         return self.sendCommandReturn("streamoff")
     
     def emergency(self) -> str:
@@ -258,14 +270,17 @@ class Tello:
 
     #change fps -> using pre defined settings
     def setFPS(self, fps: str) -> str:
+        if self.recording: return "Error: Recording"
         return self.sendCommandReturn(f"setfps {fps}")
     
     #change bitrate for video - > (0 - 5) auto, 1Mbps, 2Mbps, 3Mbps, 4Mbps, 5Mbps
     def setBitRate(self, bitrate: int) -> str:
+        if self.recording: return "Error: Recording"
         return self.sendCommandReturn(f"setbitrate {bitrate}")
     
     #set res to either 480p or 720p using "high" and "low"
     def setResolution(self, res: str) -> str:
+        if self.recording: return "Error: Recording"
         return self.sendCommandReturn(f"setresolution {res}")
     
     #change camera to downvision 0 no 1 yes
@@ -302,6 +317,33 @@ class Tello:
         return self.sendCommandReturn("wifiversion?")
 
     """Stream for Video"""
+    #start video recording
+    def startVideo(self, frame):
+        self.startRecording = False
+        self.recording = True
+
+        self.outputContainer = av.open(datetime.now().strftime("output/%Y%m%d_%H%M%S.mp4"), mode="w")
+        self.outputStream = self.outputContainer.add_stream("h264", rate=30)
+        self.outputStream.width = frame.width
+        self.outputStream.height = frame.height
+        self.outputStream.pix_fmt = "yuv420p"
+
+    def endVideo(self):
+        if not self.recording:
+            return
+        
+        self.endRecording = False
+        self.recording = False
+
+        #flush encoder
+        for packet in self.outputStream.encode():
+            self.outputContainer.mux(packet)
+        
+        self.outputContainer.close()
+
+        self.outputContainer = None
+        self.outputStream = None
+
     #get stream if video on
     def streamThread(self):
         while not self.endEvent.is_set():
@@ -312,6 +354,16 @@ class Tello:
                     for frame in container.decode(video=0):
                         if not self.streamOn:
                             break
+                        
+                        with self.recordLock:
+                            if self.startRecording:
+                                self.startVideo(frame)
+                            if self.endRecording:
+                                self.endVideo()
+                        
+                        if self.recording:
+                            for packet in self.outputStream.encode(frame):
+                                self.outputContainer.mux(packet)
 
                         img = frame.to_ndarray(format="rgb24")
 
@@ -320,6 +372,10 @@ class Tello:
 
                 except Exception as e:
                     print("Stream error: ", e)
+                
+                #safety net
+                if self.recording:
+                    self.endVideo()
                 
                 container.close()
             time.sleep(1)
@@ -435,3 +491,19 @@ class Tello:
     #take bool to set mode
     def setFastMode(self, mode):
         self.fastMode = mode
+    
+    #take picture
+    def picture(self):
+        Image.fromarray(self.getFrame()).transpose(Image.Transpose.ROTATE_270).save("output/" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ".jpg")
+    
+    #start video
+    def video(self):
+        if self.streamOn:
+            if self.recording:
+                with self.recordLock:
+                    self.endRecording = True
+            else:
+                with self.recordLock:
+                    self.setResolution(self.HIGH)
+                    self.setFPS(self.FPS_30)
+                    self.startRecording = True

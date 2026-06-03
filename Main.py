@@ -44,9 +44,9 @@ while run:
             elif e.button == 3: #y
                 tello.emergency()
             elif e.button == 9: #lBump
-                pass #picture
+                tello.picture()
             elif e.button == 10: #rBump
-                pass #video
+                tello.video()
             elif e.button == 4: #Back
                 tello.reboot()
                 run = False
