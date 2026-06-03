@@ -19,6 +19,8 @@ axis = [0.0, 0.0, 0.0, 0.0, -1.0, -1.0]
 
 run = True
 while run:
+    flipped = False
+
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             run = False
@@ -62,9 +64,20 @@ while run:
                     tello.setFastMode(True)
             elif e.button == 8: #RStick
                 pass
-        
-        elif e.type == pygame.JOYHATMOTION:
-            pass #flips
+            
+            #dpad
+            elif e.button == 11 and not flipped: #up
+                tello.flipForward()
+                flipped = True
+            elif e.button == 12 and not flipped: #down
+                tello.flipBackward()
+                flipped = True
+            elif e.button == 13 and not flipped:
+                tello.flipLeft()
+                flipped = True
+            elif e.button == 14 and not flipped:
+                tello.flipRight()
+                flipped = True
     
     maxSpd = tello.FAST_SPD if tello.fastMode else tello.SLOW_SPD
     tello.rc(maxSpd * axis[0], maxSpd * -axis[1], maxSpd * -axis[3], maxSpd * axis[2])
