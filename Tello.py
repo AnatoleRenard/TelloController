@@ -19,6 +19,11 @@ class Tello:
     MIN_RC   = -100
     MAX_RC   = 100
 
+    #fps
+    FPS_5  = "low"
+    FPS_15 = "middle"
+    FPS_30 = "high"
+
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(10)
@@ -101,6 +106,17 @@ class Tello:
         x = np.clip(x, self.MIN_ROT, self.MAX_ROT)
         return self.sendCommandReturn(f"ccw {x}")
     
+    #turn motor on and off for cooling while on ground
+    def motoron(self) -> str:
+        return self.sendCommandReturn("motoron")
+    
+    def motoroff(self) -> str:
+        return self.sendCommandReturn("motoroff")
+    
+    #throw to takeoff, launches within 5 seconds
+    def throwfly(self) -> str:
+        return self.sendCommandReturn("throwfly")
+    
     #flips
     def flip(self, dir: str) -> str: #dir = either l,r,b,f
         return self.sendCommandReturn(f"flip {dir}")
@@ -137,6 +153,10 @@ class Tello:
 
     #todo: mission pads functions
 
+    #reboot drone (no response = success)
+    def reboot(self) -> str:
+        return self.sendCommandReturn("reboot")
+
     """Set Commands"""
     #set speed to x cm/s (10 - 100)
     def setSpeed(self, x: int) -> str:
@@ -144,15 +164,15 @@ class Tello:
         return self.sendCommandReturn(f"speed {x}")
     
     #rc control
-    def rc(self, right: int, forward: int, up: int, yaw: int) -> str:
+    def rc(self, right: int, forward: int, up: int, yaw: int):
         right = np.clip(right, self.MIN_RC, self.MAX_RC)
         forward = np.clip(forward, self.MIN_RC, self.MAX_RC)
         up = np.clip(up, self.MIN_RC, self.MAX_RC)
         yaw = np.clip(yaw, self.MIN_RC, self.MAX_RC)
 
-        return self.sendCommandReturn(f"rc {right} {forward} {up} {yaw}")
+        return self.sendCommandNoReturn(f"rc {right} {forward} {up} {yaw}")
     
-    #setup wifi
+    #setup wifi -> drone reboots after 3s
     def setWifi(self, name: str, pswd: str) -> str:
         return self.sendCommandReturn(f"wifi {name} {pswd}")
 
@@ -168,6 +188,22 @@ class Tello:
     def missionPadDetection(self, x: int) -> str:
         return self.sendCommandReturn(f"mdirection {x}")
     
+    #change port for state and video
+    def changePorts(self, info: int, video: int) -> str:
+        return self.sendCommandReturn(f"port {info} {video}")
+
+    #change fps -> using pre defined settings
+    def setFPS(self, fps: str) -> str:
+        return self.sendCommandReturn(f"setfps {fps}")
+    
+    #change bitrate for video - > (0 - 5) auto, 1Mbps, 2Mbps, 3Mbps, 4Mbps, 5Mbps
+    def setBitRate(self, bitrate: int) -> str:
+        return self.sendCommandReturn(f"setbitrate {bitrate}")
+    
+    #set res to either 480p or 720p using "high" and "low"
+    def setResolution(self, res: str) -> str:
+        return seld.sendCommandReturn(f"setresolution {res}")
+
     """Read Commands"""
     #get speed in cm/s
     def getSpeed(self) -> int:
@@ -192,3 +228,7 @@ class Tello:
     #get serial number
     def getSerialNumber(self) -> str:
         return self.sendCommandReturn("sn?")
+
+    #get wifi version
+    def getWifiVersion(self) -> str:
+        return self.sendCommandReturn("wifiversion?") 
