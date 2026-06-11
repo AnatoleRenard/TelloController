@@ -2,7 +2,6 @@ import Tello, time, pygame
 
 #Tello
 tello = Tello.Tello()
-print(tello.getBattery())
 
 #pygame
 IMAGE_SIZE = (640, 480)

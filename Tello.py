@@ -37,6 +37,7 @@ class Tello:
 
     #time
     TIMEOUT = 0.05
+    TIMEOUT_CONNECTION = 0.5
 
     def __init__(self):
         #event
@@ -58,6 +59,7 @@ class Tello:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(10)
         self.sock.bind(("", self.LOCAL_PORT))
+        self.sockLock = Lock()
 
         #image
         self.frame: NDArray[np.uint8]
@@ -72,9 +74,10 @@ class Tello:
         self.state: dict[str, str] = {"mid": "-2", "x": "-200", "y": "-200", "z": "-200", "mpry": "0",
                                  "pitch": "0", "roll": "0", "yaw": "0", "vgx": "0", "vgy": "0", "vgz": "0",
                                  "templ": "0", "tmph": "0", "tof": "0", "h": "0", "bat": "0", "baro": "0",
-                                 "time": "0", "agx": "0", "agy": "0", "agz": "0"}
+                                 "time": "0", "agx": "0", "agy": "0", "agz": "0", "con": "0"}
         self.stateLock = Lock()
         Thread(target=self.stateThread).start()
+        Thread(target=self.connectionThread).start()
 
         #set drone into sdk mode
         self.sendCommandReturn("command")
@@ -93,7 +96,8 @@ class Tello:
     
     def sendCommandNoReturn(self, command: str):
         #send command
-        self.sock.sendto(command.encode('utf-8'), (self.TELLO_IP, self.COMMAND_PORT))
+        with self.sockLock:
+            self.sock.sendto(command.encode('utf-8'), (self.TELLO_IP, self.COMMAND_PORT))
 
     def sendCommandReturn(self, command: str) -> str:
         #make sure not too many commands sent at once
@@ -109,12 +113,13 @@ class Tello:
 
         #recv return
         data = "-1"
-        try:
-            data, address = self.sock.recvfrom(1024)
-            data = data.decode('utf-8')
-            print(f"Response: {data}")
-        except socket.timeout:
-            print("No response")
+        with self.sockLock:
+            try:
+                data, address = self.sock.recvfrom(1024)
+                data = data.decode('utf-8').rstrip("\r\n")
+                print(f"Response: {data}")
+            except socket.timeout:
+                print("No response")
         
         return data
 
@@ -398,7 +403,7 @@ class Tello:
             data = "-1"
             try:
                 data, address = sock.recvfrom(1024)
-                data = data.decode('utf-8')
+                data = data.decode('utf-8').rstrip("\r\n")
             except socket.timeout:
                 print("No State data for a Second!")
 
@@ -486,7 +491,19 @@ class Tello:
     def getAccelZ(self) -> int:
         with self.stateLock:
             return float(self.state["agz"])
-
+    
+    """Get Connection State"""
+    def connectionThread(self):
+        while not self.endEvent.is_set():
+            resp = self.sendCommandReturn("wifi?")
+            with self.stateLock:
+                self.state["con"] = resp
+            time.sleep(self.TIMEOUT_CONNECTION)
+    
+    def getConnection(self) -> int:
+        return int(self.state["con"])
+        
+        
     """None UDP commands"""
     #take bool to set mode
     def setFastMode(self, mode):
